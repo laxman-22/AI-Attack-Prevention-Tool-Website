@@ -40,7 +40,7 @@ const MultiStepForm = () => {
   const progress = (step / totalSteps) * 100;
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [containerHeight, setContainerHeight] = useState<number>(200);
-  let [isSampleSelected, setIsSampleSelected] = useState(false);
+  const [isSampleSelected, setIsSampleSelected] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
   const [query, setQuery] = useState("");
