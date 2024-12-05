@@ -55,7 +55,7 @@ const MultiStepForm = () => {
 
   const fetchImage = async () => {
     try {
-      const response = await fetch('http://127.0.0.1:5000/getSampleImage?sampleSelected='+getValues('sampleSelected'));
+      const response = await fetch('https://ai-attack-prevention-tool-backend.onrender.com/getSampleImage?sampleSelected='+getValues('sampleSelected'));
       const data = await response.json();
 
       if (data && data.image) {
@@ -116,7 +116,7 @@ const MultiStepForm = () => {
           };
   
           try {
-            const response = await fetch("http://127.0.0.1:5000/uploadImage?sampleSelected=false", {
+            const response = await fetch("https://ai-attack-prevention-tool-backend.onrender.com/uploadImage?sampleSelected=false", {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
@@ -236,7 +236,7 @@ const MultiStepForm = () => {
     try {
       await delay(1500);
       console.log(isSampleSelected)
-      const response = await fetch("http://127.0.0.1:5000/preprocessImage?sampleSelected="+isSampleSelected, {
+      const response = await fetch("https://ai-attack-prevention-tool-backend.onrender.com/preprocessImage?sampleSelected="+isSampleSelected, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -264,7 +264,7 @@ const MultiStepForm = () => {
 
     };
     try {
-      const response = await fetch("http://127.0.0.1:5000/attackImage", {
+      const response = await fetch("https://ai-attack-prevention-tool-backend.onrender.com/attackImage", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -287,7 +287,7 @@ const MultiStepForm = () => {
   const handleGeneratePrediction = async () => {
     await delay(1500);
     try {
-      const response = await fetch("http://127.0.0.1:5000/generatePrediction", {
+      const response = await fetch("https://ai-attack-prevention-tool-backend.onrender.com/generatePrediction", {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
