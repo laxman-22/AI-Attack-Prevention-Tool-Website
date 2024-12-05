@@ -83,7 +83,6 @@ const MultiStepForm = () => {
   };
 
   const handleSelectLabel = (label: string) => {
-    setSelectedLabel(label);
     setQuery(label);
     setFilteredLabels([]);
     setValue('label', label);
