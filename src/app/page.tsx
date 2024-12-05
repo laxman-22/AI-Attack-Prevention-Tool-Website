@@ -4,7 +4,7 @@ import { useForm, Controller, SubmitHandler } from "react-hook-form";
 import { useTransition, animated, useSpring } from "react-spring";
 import labels from './imagenet-simple-labels.json'
 
-
+// Form Data structure
 interface IFormInput {
   file: File[] | null;
   method: string;
@@ -18,7 +18,9 @@ interface IFormInput {
   overshoot: number | null;
 }
 
+// Form component definition
 const MultiStepForm = () => {
+  // Variable Instantiation
   const [step, setStep] = useState(1);
   const [prevStep, setPrevStep] = useState(1);
   const { control, handleSubmit, formState: { errors }, watch, setValue, getValues } = useForm<IFormInput>({
@@ -53,23 +55,35 @@ const MultiStepForm = () => {
   const [attackedImageBase64, setAttackedImageBase64] = useState(null);
   const [prediction, setPrediction] = useState({ isClean: -1, attackType: "unknown" });
 
+  // Request the sample image from the server
   const fetchImage = async () => {
     try {
-      const response = await fetch('https://ai-attack-prevention-tool-backend.onrender.com/getSampleImage?sampleSelected='+getValues('sampleSelected'));
-      const data = await response.json();
-
-      if (data && data.image) {
-        setImageSrc(`data:image/jpeg;base64,${data.image}`);
-      } else {
-        console.error('Error fetching image:', data.error);
-      }
+      const response = await fetch('https://ai-attack-prevention-tool-backend.onrender.com/getSampleImage?sampleSelected='+getValues('sampleSelected'), {
+        method: "GET",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        credentials: "omit",
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+      })
+      .then(data => {
+        if (data && data.image) {
+          setImageSrc(`data:image/jpeg;base64,${data.image}`);
+        } else {
+          console.error('Error fetching image:', data.error);
+        }
+      })
     } catch (error) {
       console.error('Error fetching image:', error);
     }
   };
 
-
-
+  // Query the image-net labels json file
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     const searchQuery = e.target.value;
     setQuery(searchQuery);
@@ -87,11 +101,12 @@ const MultiStepForm = () => {
     setValue('label', label);
   };
 
+  // Progress bar properties
   const progressProps = useSpring({
     width: `${progress}%`,
     config: { duration: 300 },
   });
-
+  // Next and previous page action handlers
   const handleNext = () => {
     setPrevStep(step);
     setStep((prev) => Math.min(prev + 1, totalSteps));
@@ -100,8 +115,9 @@ const MultiStepForm = () => {
     setPrevStep(step);
     setStep((prev) => Math.max(prev - 1, 1));
   };
-
+  // Submission button handler to make predictions
   const handleFormSubmit: SubmitHandler<IFormInput> = async (data) => {
+    // Upload the file if sample image is not selected
     if (!isSampleSelected) {
       const file = data.file && data.file[0];
 
@@ -124,11 +140,9 @@ const MultiStepForm = () => {
               body: JSON.stringify(payload),
             });
   
-            
             if (response.ok) {
               const contentType = response.headers.get("Content-Type");
               const textResponse = await response.text();
-  
             
               if (contentType && contentType.includes("application/json")) {
                 const result = JSON.parse(textResponse);
@@ -154,11 +168,11 @@ const MultiStepForm = () => {
     handleNext()
     console.log(data);
   };
-
+  // Handle attack method changes
   const handleMethodChange = (method: string) => {
     setValue("method", method);
   };
-
+  // Set/Reset sample image selection when clicked
   const handleSampleToggle = () => {
     setIsSampleSelected((prev) => {
       const newState = !prev;
@@ -181,6 +195,7 @@ const MultiStepForm = () => {
     });
     setValue('sampleSelected', !isSampleSelected);
   };  
+  // Effect handler for loading substeps in making predictions
   useEffect(() => {
     if (step === 4) {
       const steps = [
@@ -229,9 +244,10 @@ const MultiStepForm = () => {
       runSteps();
     }
   }, [step]);
-
+  // Add some fixed delay
   const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+  // Ask the server to preprocess the selected image
   const handlePreprocessImage = async () => {
     try {
       await delay(1500);
@@ -249,7 +265,7 @@ const MultiStepForm = () => {
       return { ok: false };
     }
   };
-
+  // Ask the server to perform the requested attack
   const handleAttackImage = async () => {
     await delay(1500);
     const payload = {
@@ -283,7 +299,7 @@ const MultiStepForm = () => {
       console.error("Error in attacking image:", error);
     }
   };
-
+  // Ask the server to make a prediction on the attacked image
   const handleGeneratePrediction = async () => {
     await delay(1500);
     try {
@@ -315,7 +331,7 @@ const MultiStepForm = () => {
       return { ok: false };
     }
   };
-
+  // Animation handlers for the container size changing
   useEffect(() => {
     const timer = setTimeout(() => {
       if (imageRef.current) {
