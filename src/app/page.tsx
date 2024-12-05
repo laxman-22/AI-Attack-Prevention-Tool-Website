@@ -58,7 +58,7 @@ const MultiStepForm = () => {
   // Request the sample image from the server
   const fetchImage = async () => {
     try {
-      const response = await fetch('https://ai-attack-prevention-tool-backend.onrender.com/getSampleImage?sampleSelected='+getValues('sampleSelected'), {
+      await fetch('https://ai-attack-prevention-tool-backend.onrender.com/getSampleImage?sampleSelected='+getValues('sampleSelected'), {
         method: "GET",
         headers: {
             "Content-Type": "application/json",
