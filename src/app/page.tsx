@@ -45,7 +45,7 @@ const MultiStepForm = () => {
   const imageRef = useRef<HTMLImageElement>(null);
   const [query, setQuery] = useState("");
   const [filteredLabels, setFilteredLabels] = useState(labels);
-  const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
+  const [setSelectedLabel] = useState<string | null>(null);
   const [isDisabled, setIsDisabled] = useState(false);
   const [loadingStates, setLoadingStates] = useState([true, true, true]);
   const [completedSteps, setCompletedSteps] = useState([false, false, false]);
