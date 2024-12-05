@@ -139,20 +139,19 @@ const MultiStepForm = () => {
               },
               body: JSON.stringify(payload),
             });
-  
-            if (response.ok) {
-              const contentType = response.headers.get("Content-Type");
-              const textResponse = await response.text();
-            
-              if (contentType && contentType.includes("application/json")) {
-                const result = JSON.parse(textResponse);
-                console.log("File uploaded successfully", result);
-              } else {
-                console.error("Unexpected response format", textResponse);
-              }
+          
+            if (!response.ok) {
+              throw new Error(`HTTP error! status: ${response.status}`);
+            }
+          
+            const contentType = response.headers.get("Content-Type");
+          
+            if (contentType && contentType.includes("application/json")) {
+              const result = await response.json();
+              console.log("File uploaded successfully", result);
             } else {
-              const error = await response.text();
-              console.error("Error uploading file:", error);
+              const textResponse = await response.text();
+              console.error("Unexpected response format", textResponse);
             }
           } catch (error) {
             console.error("Error while making the POST request:", error);
@@ -251,7 +250,6 @@ const MultiStepForm = () => {
   const handlePreprocessImage = async () => {
     try {
       await delay(1500);
-      console.log(isSampleSelected)
       const response = await fetch("https://ai-attack-prevention-tool-backend.onrender.com/preprocessImage?sampleSelected="+isSampleSelected, {
         method: "POST",
         headers: {
