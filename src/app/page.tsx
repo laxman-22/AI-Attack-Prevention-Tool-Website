@@ -127,12 +127,11 @@ const MultiStepForm = () => {
         reader.onloadend = async () => {
           const base64String = reader.result as string;
           const payload = {
-            file: base64String,
-            sampleSelected: false,
+            file: base64String
           };
   
           try {
-            const response = await fetch("https://ai-attack-prevention-tool-backend.onrender.com/uploadImage?sampleSelected=false", {
+            const response = await fetch("https://ai-attack-prevention-tool-backend.onrender.com/uploadImage?sampleSelected="+isSampleSelected, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
