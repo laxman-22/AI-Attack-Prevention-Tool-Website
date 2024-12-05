@@ -4,12 +4,12 @@ import { useForm, Controller, SubmitHandler } from "react-hook-form";
 import { useTransition, animated, useSpring } from "react-spring";
 import labels from './imagenet-simple-labels.json'
 
+
 interface IFormInput {
   file: File[] | null;
   method: string;
   sampleSelected: boolean;
   label: string;
-  labelIndex: number | null;
   epsilon: number | null;
   alpha: number | null;
   iterations: number | null;
@@ -27,7 +27,6 @@ const MultiStepForm = () => {
       method: '',
       sampleSelected: false,
       label: '',
-      labelIndex: null,
       epsilon: null,
       alpha: null,
       iterations: null,
@@ -41,38 +40,53 @@ const MultiStepForm = () => {
   const progress = (step / totalSteps) * 100;
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [containerHeight, setContainerHeight] = useState<number>(200);
-  const [isLoading, setIsLoading] = useState(false);
   var [isSampleSelected, setIsSampleSelected] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
-
-  const [query, setQuery] = useState(""); // State for the search query
-  const [filteredLabels, setFilteredLabels] = useState(labels); // State for filtered labels
-  const [selectedLabel, setSelectedLabel] = useState<string | null>(null); // State for the selected label
+  const [query, setQuery] = useState("");
+  const [filteredLabels, setFilteredLabels] = useState(labels);
+  const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
   const [isDisabled, setIsDisabled] = useState(false);
+  const [loadingStates, setLoadingStates] = useState([true, true, true]);
+  const [completedSteps, setCompletedSteps] = useState([false, false, false]);
+  const [imageSrc, setImageSrc] = useState<string | null>(null);
+  const sampleImageRef = useRef<HTMLImageElement>(null);
+  const [attackedImageBase64, setAttackedImageBase64] = useState(null);
+  const [prediction, setPrediction] = useState({ isClean: -1, attackType: "unknown" });
+
+  const fetchImage = async () => {
+    try {
+      const response = await fetch('http://127.0.0.1:5000/getSampleImage?sampleSelected='+getValues('sampleSelected'));
+      const data = await response.json();
+
+      if (data && data.image) {
+        setImageSrc(`data:image/jpeg;base64,${data.image}`);
+      } else {
+        console.error('Error fetching image:', data.error);
+      }
+    } catch (error) {
+      console.error('Error fetching image:', error);
+    }
+  };
+
+
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     const searchQuery = e.target.value;
     setQuery(searchQuery);
 
-    // Filter the labels based on the search query
     const filtered = labels.filter((item) =>
       item.toLowerCase().includes(searchQuery.toLowerCase())
     );
     setFilteredLabels(filtered);
 
-    // Find the index of the selected label in the filtered list
-    const labelIndex = labels.indexOf(searchQuery);
-    setValue('labelIndex', labelIndex);
   };
 
   const handleSelectLabel = (label: string) => {
     setSelectedLabel(label);
-    setQuery(label);  // Optionally set the input to the selected label
-    setFilteredLabels([]);  // Clear filtered results once a label is selected
-    setValue('label', label);  // Set the selected label in the form
-    const labelIndex = labels.indexOf(label);
-    setValue('labelIndex', labelIndex);
+    setQuery(label);
+    setFilteredLabels([]);
+    setValue('label', label);
   };
 
   const progressProps = useSpring({
@@ -89,68 +103,225 @@ const MultiStepForm = () => {
     setStep((prev) => Math.max(prev - 1, 1));
   };
 
-  const handleFormSubmit: SubmitHandler<IFormInput> = (data) => {
-    alert("Form Submitted!");
+  const handleFormSubmit: SubmitHandler<IFormInput> = async (data) => {
+    if (!isSampleSelected) {
+      const file = data.file && data.file[0];
+
+      if (file) {
+        const reader = new FileReader();
+  
+        reader.onloadend = async () => {
+          const base64String = reader.result as string;
+          const payload = {
+            file: base64String,
+            sampleSelected: false,
+          };
+  
+          try {
+            const response = await fetch("http://127.0.0.1:5000/uploadImage?sampleSelected=false", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(payload),
+            });
+  
+            
+            if (response.ok) {
+              const contentType = response.headers.get("Content-Type");
+              const textResponse = await response.text();
+  
+            
+              if (contentType && contentType.includes("application/json")) {
+                const result = JSON.parse(textResponse);
+                console.log("File uploaded successfully", result);
+              } else {
+                console.error("Unexpected response format", textResponse);
+              }
+            } else {
+              const error = await response.text();
+              console.error("Error uploading file:", error);
+            }
+          } catch (error) {
+            console.error("Error while making the POST request:", error);
+          }
+        };
+  
+        reader.readAsDataURL(file);
+      } else {
+        console.error("No file selected.");
+      }
+    }
+    
+    handleNext()
     console.log(data);
   };
-  // Handle the selection of an attack method
+
   const handleMethodChange = (method: string) => {
-    setValue("method", method);  // Update the form state with the selected attack method
-    setIsLoading(true);
+    setValue("method", method);
   };
 
   const handleSampleToggle = () => {
     setIsSampleSelected((prev) => {
       const newState = !prev;
       if (newState) {
-        // Set label to "goldfish" when sample is selected
-        setQuery("goldfish"); // Update search query
-        setValue("label", "goldfish"); // Update form state label
-        setValue('labelIndex', labels.indexOf('goldfish')-1);
+        
+        setQuery("goldfish");
+        setValue("label", "goldfish");
         setIsDisabled(true)
+        fetchImage()
+        setPreviewUrl(null)
+        setImageSrc(null)
       } else {
-        // Reset the query and label when sample is deselected
+        
         setQuery(""); 
         setValue("label", "");
-        setValue('labelIndex', null);
+        setIsDisabled(true)
+        setImageSrc(null)
       }
       return newState;
     });
     setValue('sampleSelected', !isSampleSelected);
+  };  
+  useEffect(() => {
+    if (step === 4) {
+      const steps = [
+        { message: "Processing Image", action: handlePreprocessImage },
+        { message: "Performing Attack", action: handleAttackImage },
+        { message: "Generating Prediction", action: handleGeneratePrediction },
+      ];
+  
+      const runSteps = async () => {
+        for (let i = 0; i < steps.length; i++) {
+          setLoadingStates((prev) => {
+            const updatedStates = [...prev];
+            updatedStates[i] = true;
+            return updatedStates;
+          });
+  
+          console.log(steps[i].message);
+  
+          
+          const response = await steps[i].action();
+          
+          if (response.ok) {
+            setLoadingStates((prev) => {
+              const updatedStates = [...prev];
+              updatedStates[i] = false;
+              return updatedStates;
+            });
+  
+            setCompletedSteps((prev) => {
+              const updatedCompletedSteps = [...prev];
+              updatedCompletedSteps[i] = true;
+              return updatedCompletedSteps;
+            });
+          } else {
+            
+            console.error(`Error during step: ${steps[i].message}`);
+            setLoadingStates((prev) => {
+              const updatedStates = [...prev];
+              updatedStates[i] = false;
+              return updatedStates;
+            });
+          }
+        }
+      };
+  
+      runSteps();
+    }
+  }, [step]);
+
+  const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const handlePreprocessImage = async () => {
+    try {
+      await delay(1500);
+      console.log(isSampleSelected)
+      const response = await fetch("http://127.0.0.1:5000/preprocessImage?sampleSelected="+isSampleSelected, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+      console.log(response)
+      return response;
+    } catch (error) {
+      console.error("Error in preprocessing image:", error);
+      return { ok: false };
+    }
   };
 
+  const handleAttackImage = async () => {
+    await delay(1500);
+    const payload = {
+      attackType: watch('method'),
+      label: watch('label'),
+      epsilon: watch('epsilon'),
+      alpha: watch('alpha'),
+      iterations: watch('iterations'),
+      confidence: watch('confidence'),
+      learningRate: watch('learningRate'),
+      overshoot: watch('overshoot'),
 
-  // const renderImagePreview = () => {
-  //   if (previewUrl && step === 2) {
-  //     return (
-  //         <div className="mt-4">
-  //           {isLoading ? ( 
-  //               <div role="status" className="flex justify-center align-center">
-  //                   <svg aria-hidden="true" className="w-8 h-8 text-gray-200 animate-spin dark:text-gray-600 fill-blue-600" viewBox="0 0 100 101" fill="none" xmlns="http://www.w3.org/2000/svg">
-  //                       <path d="M100 50.5908C100 78.2051 77.6142 100.591 50 100.591C22.3858 100.591 0 78.2051 0 50.5908C0 22.9766 22.3858 0.59082 50 0.59082C77.6142 0.59082 100 22.9766 100 50.5908ZM9.08144 50.5908C9.08144 73.1895 27.4013 91.5094 50 91.5094C72.5987 91.5094 90.9186 73.1895 90.9186 50.5908C90.9186 27.9921 72.5987 9.67226 50 9.67226C27.4013 9.67226 9.08144 27.9921 9.08144 50.5908Z" fill="currentColor"/>
-  //                       <path d="M93.9676 39.0409C96.393 38.4038 97.8624 35.9116 97.0079 33.5539C95.2932 28.8227 92.871 24.3692 89.8167 20.348C85.8452 15.1192 80.8826 10.7238 75.2124 7.41289C69.5422 4.10194 63.2754 1.94025 56.7698 1.05124C51.7666 0.367541 46.6976 0.446843 41.7345 1.27873C39.2613 1.69328 37.813 4.19778 38.4501 6.62326C39.0873 9.04874 41.5694 10.4717 44.0505 10.1071C47.8511 9.54855 51.7191 9.52689 55.5402 10.0491C60.8642 10.7766 65.9928 12.5457 70.6331 15.2552C75.2735 17.9648 79.3347 21.5619 82.5849 25.841C84.9175 28.9121 86.7997 32.2913 88.1811 35.8758C89.083 38.2158 91.5421 39.6781 93.9676 39.0409Z" fill="currentFill"/>
-  //                   </svg>
-  //                   <span className="sr-only">Loading...</span>
-  //               </div>
- 
-  //             ) : (
-  //               <img
-  //                 ref={imageRef}
-  //                 src={previewUrl}
-  //                 alt="Uploaded preview"
-  //                 className="w-full object-contain border border-gray-300 rounded-md"
-  //               /> 
-  //             )}
-  //         </div>        
-  //     );
-  //   }
-  
-  //   return null;
-  // };  
+    };
+    try {
+      const response = await fetch("http://127.0.0.1:5000/attackImage", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+      console.log(response)
+      if (response.ok) {
+        const result = await response.json();
+        setAttackedImageBase64(result.attacked_image_base64);
+        return response;
+      } else {
+        console.error("Error in attacking image:", await response.text());
+      }
+    } catch (error) {
+      console.error("Error in attacking image:", error);
+    }
+  };
+
+  const handleGeneratePrediction = async () => {
+    await delay(1500);
+    try {
+      const response = await fetch("http://127.0.0.1:5000/generatePrediction", {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+      const data = await response.json(); 
+
+      const mapAttackType = (attackType: string): string => {
+        const attackTypeMap: { [key: string]: string } = {
+          no_attack: "No Attack",
+          deepfool: "Deep Fool",
+          fgsm: "FGSM",
+          pgd: "PGD",
+          cw: "C&W",
+        };
+
+        return attackTypeMap[attackType] || "Unknown Attack";
+      };
+      const readableAttackType = mapAttackType(data.attackType);
+      setPrediction({ isClean: data.isClean, attackType: readableAttackType });
+      console.log(data)
+      return response;
+    } catch (error) {
+      console.error("Error in generating prediction:", error);
+      return { ok: false };
+    }
+  };
+
   useEffect(() => {
     const timer = setTimeout(() => {
       if (imageRef.current) {
-        setContainerHeight(imageRef.current.naturalHeight+200);
+        setContainerHeight(imageRef.current.naturalHeight);
       }
     }, 100);
 
@@ -158,10 +329,17 @@ const MultiStepForm = () => {
   }, [previewUrl]);
 
   useEffect(() => {
-    // Retrieve the values directly from getValues, which gets the entire form state
+    if (sampleImageRef.current && sampleImageRef.current.complete) {
+      const imageHeight = sampleImageRef.current.naturalHeight;
+      const newHeight = Math.min(imageHeight, 450);
+      setContainerHeight(newHeight);
+    } else {
+      setContainerHeight(200)
+    }
+  }, [imageSrc]);
+
+  useEffect(() => {
     const formValues = getValues();
-    
-    // Set form values explicitly
     setValue('epsilon', formValues.epsilon);
     setValue('alpha', formValues.alpha);
     setValue('iterations', formValues.iterations);
@@ -171,28 +349,21 @@ const MultiStepForm = () => {
   }, [getValues, setValue, watch('method')]);  
   useEffect(() => {
     if (step == 3) {
-      setContainerHeight(350);
+      setContainerHeight(400);
     }
     else {
-      setContainerHeight(200);
+      setContainerHeight(250);
     }
     
   }, [step, watch('method')]);
 
   useEffect(() => {
-    setTimeout(() => {
-      setIsLoading(false);
-    }, 1000); 
-  }, [watch('method')]);
-
-  useEffect(() => {
-    // Adjust container height based on content (fields rendered)
     const timer = setTimeout(() => {
       const fieldsContainer = document.getElementById("fields-container");
       if (fieldsContainer) {
-        setContainerHeight(fieldsContainer.scrollHeight + 100); // Adjust based on content height
+        setContainerHeight(fieldsContainer.scrollHeight + 100);
       }
-    }, 200); // Delay to ensure content is rendered
+    }, 200);
     
     return () => clearTimeout(timer);
   }, [watch('method')]); 
@@ -221,7 +392,7 @@ const MultiStepForm = () => {
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-100">
-      <div className="p-6 bg-white rounded-lg shadow-lg w-full max-w-lg">
+      <div className="p-6 bg-white rounded-lg shadow-lg w-full max-w-2xl h-auto max-h-[90vh]">
         <h1 className="text-2xl font-bold text-center mb-4">AI Image Attack Detector</h1>
         <p className="text-sm text-center mb-4">This tool allows you to attack any image with FGSM, PGD, C&W, and DeepFool to see if the custom ResNet50 model is able to detect the attack.</p>
 
@@ -237,7 +408,7 @@ const MultiStepForm = () => {
         <h2 className="text-lg font-semibold text-center mb-4">{stepTitles[step - 1]}</h2>
 
         {/* Form */}
-        <div className="relative overflow-hidden mb-4" ref={contentRef}>
+        <div className="relative overflow-y-auto mb-4" ref={contentRef}>
           {/* Container height animation */}
           <animated.div style={{ ...animatedHeightProps, overflow: 'hidden' }}>
             {transitions((style, currentStep) => (
@@ -290,6 +461,9 @@ const MultiStepForm = () => {
                         >
                           {isSampleSelected ? "Sample Selected" : "Try a Sample Image"}
                         </button>
+                        {imageSrc && (
+                        <img ref={sampleImageRef} className="w-full max-w-full max-h-[300px] object-contain mt-4 border border-white-300 rounded-md" src={imageSrc} alt="Fetched from server" />
+                        )}
                     </div>
 
                     {/* File Preview */}
@@ -301,7 +475,7 @@ const MultiStepForm = () => {
                             ref={imageRef}
                             src={previewUrl}
                             alt="Uploaded preview"
-                            className="w-full object-contain border border-gray-300 rounded-md"
+                            className="w-full max-w-full max-h-[400px] object-contain mt-4 border border-gray-300 rounded-md"
                           />
                         </div>
                       </div>
@@ -327,6 +501,19 @@ const MultiStepForm = () => {
                       ))}
                     </div>
                     {errors.method && <p className="text-red-500 text-sm mt-2">{errors.method.message}</p>}
+                    {/* Show the image when 'No Attack' is selected */}
+                    {watch('method') === 'No Attack' && (
+                      <div className="mt-4">
+                        {/* Display the image based on whether it's uploaded or fetched */}
+                        {previewUrl ? (
+                          <img className="w-full max-w-full max-h-[300px] object-contain mt-4 border border-gray-300 rounded-md" src={previewUrl} alt="Uploaded" />
+                        ) : imageSrc ? (
+                          <img className="w-full max-w-full max-h-[300px] object-contain mt-4 border border-gray-300 rounded-md" src={imageSrc} alt="Sample" />
+                        ) : (
+                          <p>No image selected</p>
+                        )}
+                      </div>
+                    )}
                     {/* Conditionally render inputs based on selected method */}
                     {watch('method') === "FGSM" && (
                       <div className="mt-4 flex flex-col items-center justify-center ">
@@ -350,9 +537,9 @@ const MultiStepForm = () => {
                               value={field.value ?? ""}
                               className="w-4/5 p-2 mt-1 border border-gray-300 rounded-md"
                               placeholder="Enter Epsilon value"
-                              min="0.01" // Enforces minimum value at the browser level
-                              max="1" // Enforces maximum value at the browser level
-                              step="0.01" // Sets the increment for input values
+                              min="0.01"
+                              max="1"
+                              step="0.01"
                             />
                           )}
                         />
@@ -421,9 +608,9 @@ const MultiStepForm = () => {
                               value={field.value ?? ""}
                               className="w-4/5 p-2 mt-1 border border-gray-300 rounded-md"
                               placeholder="Enter Epsilon value"
-                              min="0.01" // Enforces minimum value at the browser level
-                              max="1" // Enforces maximum value at the browser level
-                              step="0.01" // Sets the increment for input values
+                              min="0.01"
+                              max="1"
+                              step="0.01"
                             />
                           )}
                         />
@@ -446,9 +633,9 @@ const MultiStepForm = () => {
                               value={field.value ?? ""}
                               className="w-4/5 p-2 mt-1 border border-gray-300 rounded-md"
                               placeholder="Enter Epsilon value"
-                              min="0.01" // Enforces minimum value at the browser level
-                              max="1" // Enforces maximum value at the browser level
-                              step="0.01" // Sets the increment for input values
+                              min="0.01"
+                              max="1"
+                              step="0.01"
                             />
                           )}
                         />
@@ -471,8 +658,8 @@ const MultiStepForm = () => {
                               className="w-4/5 p-2 mt-1 border border-gray-300 rounded-md"
                               placeholder="Enter number of iterations"
                               value={field.value ?? ""}
-                              min="1" // Enforces minimum value at the browser level
-                              max="500" // Enforces maximum value at the browser level
+                              min="1"
+                              max="500"
                               step="1"
                             />
                           )}
@@ -565,8 +752,8 @@ const MultiStepForm = () => {
                               className="w-4/5 p-2 mt-1 border border-gray-300 rounded-md"
                               placeholder="Enter number of iterations"
                               value={field.value ?? ""}
-                              min="1" // Enforces minimum value at the browser level
-                              max="500" // Enforces maximum value at the browser level
+                              min="1"
+                              max="500"
                               step="1"
                             />
                           )}
@@ -576,7 +763,7 @@ const MultiStepForm = () => {
                           Learning Rate
                         </label>
                         <Controller
-                          name="learningrate"
+                          name="learningRate"
                           control={control}
                           rules={{
                             required: "Learning Rate is required",
@@ -587,13 +774,13 @@ const MultiStepForm = () => {
                             <input
                               {...field}
                               type="number"
-                              id="epsilon"
+                              id="learningRate"
                               value={field.value ?? ""}
                               className="w-4/5 p-2 mt-1 border border-gray-300 rounded-md"
                               placeholder="Enter Learning Rate"
-                              min="0.01" // Enforces minimum value at the browser level
-                              max="1" // Enforces maximum value at the browser level
-                              step="0.01" // Sets the increment for input values
+                              min="0.01"
+                              max="1"
+                              step="0.01"
                             />
                           )}
                         />
@@ -662,8 +849,8 @@ const MultiStepForm = () => {
                               className="w-4/5 p-2 mt-1 border border-gray-300 rounded-md"
                               placeholder="Enter number of iterations"
                               value={field.value ?? ""}
-                              min="1" // Enforces minimum value at the browser level
-                              max="500" // Enforces maximum value at the browser level
+                              min="1"
+                              max="500"
                               step="1"
                             />
                           )}
@@ -688,9 +875,9 @@ const MultiStepForm = () => {
                               value={field.value ?? ""}
                               className="w-4/5 p-2 mt-1 border border-gray-300 rounded-md"
                               placeholder="Enter Learning Rate"
-                              min="0.01" // Enforces minimum value at the browser level
-                              max="1" // Enforces maximum value at the browser level
-                              step="0.01" // Sets the increment for input values
+                              min="0.01"
+                              max="1"
+                              step="0.01"
                             />
                           )}
                         />
@@ -744,7 +931,6 @@ const MultiStepForm = () => {
                       <li><strong>Attack Type:</strong> {watch('method')}</li>
                       <li><strong>Sample Selected:</strong> {watch('sampleSelected').toString()}</li>
                       <li><strong>Label:</strong> {watch('label')}</li>
-                      <li><strong>Label Index:</strong> {watch('labelIndex')}</li>
                       <li><strong>Epsilon:</strong> {watch('epsilon')}</li>
                       <li><strong>Alpha:</strong> {watch('alpha')}</li>
                       <li><strong>Iterations:</strong> {watch('iterations')}</li>
@@ -752,6 +938,83 @@ const MultiStepForm = () => {
                       <li><strong>Learning Rate:</strong> {watch('learningRate')}</li>
                       <li><strong>Overshoot:</strong> {watch('overshoot')}</li>
                     </ul>
+                  </div>
+                )}
+                {currentStep === 4 && (
+                  <div>
+                    <h2 className="mb-2 text-lg font-semibold text-gray-900 dark:text-white">
+                      Analyzing:
+                    </h2>
+                    <ul className="max-w-md space-y-2 text-gray-500 list-inside dark:text-gray-400">
+                      {["Processing Image", "Performing Attack", "Generating Prediction"].map(
+                        (step, index) => (
+                          <li key={index} className="flex items-center">
+                            {loadingStates[index] ? (
+                              // Show loading spinner and text while the step is processing
+                              <>
+                                <div role="status" className="flex items-center">
+                                  <svg
+                                    aria-hidden="true"
+                                    className="w-4 h-4 me-2 text-gray-200 animate-spin dark:text-gray-600 fill-blue-600"
+                                    viewBox="0 0 100 101"
+                                    fill="none"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                  >
+                                    <path
+                                      d="M100 50.5908C100 78.2051 77.6142 100.591 50 100.591C22.3858 100.591 0 78.2051 0 50.5908C0 22.9766 22.3858 0.59082 50 0.59082C77.6142 0.59082 100 22.9766 100 50.5908ZM9.08144 50.5908C9.08144 73.1895 27.4013 91.5094 50 91.5094C72.5987 91.5094 90.9186 73.1895 90.9186 50.5908C90.9186 27.9921 72.5987 9.67226 50 9.67226C27.4013 9.67226 9.08144 27.9921 9.08144 50.5908Z"
+                                      fill="currentColor"
+                                    />
+                                    <path
+                                      d="M93.9676 39.0409C96.393 38.4038 97.8624 35.9116 97.0079 33.5539C95.2932 28.8227 92.871 24.3692 89.8167 20.348C85.8452 15.1192 80.8826 10.7238 75.2124 7.41289C69.5422 4.10194 63.2754 1.94025 56.7698 1.05124C51.7666 0.367541 46.6976 0.446843 41.7345 1.27873C39.2613 1.69328 37.813 4.19778 38.4501 6.62326C39.0873 9.04874 41.5694 10.4717 44.0505 10.1071C47.8511 9.54855 51.7191 9.52689 55.5402 10.0491C60.8642 10.7766 65.9928 12.5457 70.6331 15.2552C75.2735 17.9648 79.3347 21.5619 82.5849 25.841C84.9175 28.9121 86.7997 32.2913 88.1811 35.8758C89.083 38.2158 91.5421 39.6781 93.9676 39.0409Z"
+                                      fill="currentFill"
+                                    />
+                                  </svg>
+                                  <span>{step}</span>
+                                </div>
+                              </>
+                            ) : completedSteps[index] ? (
+                              // Show check mark and text once the step is completed
+                              <div className="flex items-center">
+                                <svg
+                                  className="w-4 h-4 me-2 text-green-500 dark:text-green-400 flex-shrink-0"
+                                  aria-hidden="true"
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  fill="currentColor"
+                                  viewBox="0 0 20 20"
+                                >
+                                  <path d="M10 .5a9.5 9.5 0 1 0 9.5 9.5A9.51 9.51 0 0 0 10 .5Zm3.707 8.207-4 4a1 1 0 0 1-1.414 0l-2-2a1 1 0 0 1 1.414-1.414L9 10.586l3.293-3.293a1 1 0 0 1 1.414 1.414Z" />
+                                </svg>
+                                <span>{step}</span>
+                              </div>
+                            ) : (
+                              <span>{step}</span>
+                            )}
+                          </li>
+                        )
+                      )}
+                    </ul>
+                    
+                    {prediction && (
+                      <div className="mt-4">
+                        <h3>Prediction Results:</h3>
+                        <p><strong>Probability of image being attacked:</strong> {(prediction.isClean * 100).toFixed(2)}%</p>
+                        <p><strong>Most Likely Attack Type:</strong> {prediction.attackType}</p>
+                      </div>
+                    )}
+
+                    {/* Display the attacked image here if available */}
+                    {attackedImageBase64 && (
+                      <div className="mt-4">
+                        <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
+                          {watch('method')} Image:
+                        </h3>
+                        <img
+                          src={`data:image/png;base64,${attackedImageBase64}`}
+                          alt="Attacked"
+                          className="mt-2"
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
               </animated.div>
@@ -762,12 +1025,32 @@ const MultiStepForm = () => {
         {/* Navigation Buttons */}
         <div className="flex justify-between mt-6">
           {step > 1 && (
-            <button type="button" onClick={handlePrev} className="px-4 py-2 bg-gray-300 rounded-md hover:bg-gray-400">Previous</button>
+            <button
+              type="button"
+              onClick={handlePrev}
+              className="px-4 py-2 bg-gray-300 rounded-md hover:bg-gray-400"
+            >
+              Previous
+            </button>
           )}
-          {step < totalSteps ? (
-            <button type="button" onClick={handleNext} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Next</button>
+          {step === 3 ? (
+            <button
+              type="button"
+              onClick={handleSubmit(handleFormSubmit)}
+              className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+            >
+              Submit
+            </button>
           ) : (
-            <button type="submit" onClick={handleSubmit(handleFormSubmit)} className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700">Submit</button>
+            step < totalSteps - 1 && (
+              <button
+                type="button"
+                onClick={handleNext}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              >
+                Next
+              </button>
+            )
           )}
         </div>
       </div>
