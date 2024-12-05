@@ -453,7 +453,7 @@ const MultiStepForm = () => {
                                 const file = e.target.files?.[0];
                                 if (file) {
                                   const reader = new FileReader();
-                                  reader.onloadend = () => setPreviewUrl(reader.result as string); // Preview the file
+                                  reader.onloadend = () => setPreviewUrl(reader.result as string);
                                   reader.readAsDataURL(file);
                                 }
                                 onChange(e.target.files);
