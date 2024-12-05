@@ -184,10 +184,9 @@ const MultiStepForm = () => {
         setPreviewUrl(null)
         setImageSrc(null)
       } else {
-        
         setQuery(""); 
         setValue("label", "");
-        setIsDisabled(true)
+        setIsDisabled(false)
         setImageSrc(null)
       }
       return newState;
