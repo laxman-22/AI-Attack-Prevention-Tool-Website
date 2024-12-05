@@ -45,7 +45,6 @@ const MultiStepForm = () => {
   const imageRef = useRef<HTMLImageElement>(null);
   const [query, setQuery] = useState("");
   const [filteredLabels, setFilteredLabels] = useState(labels);
-  const [setSelectedLabel] = useState<string | null>(null);
   const [isDisabled, setIsDisabled] = useState(false);
   const [loadingStates, setLoadingStates] = useState([true, true, true]);
   const [completedSteps, setCompletedSteps] = useState([false, false, false]);
@@ -203,7 +202,7 @@ const MultiStepForm = () => {
           
           const response = await steps[i].action();
           
-          if (response.ok) {
+          if (response && response.ok) {
             setLoadingStates((prev) => {
               const updatedStates = [...prev];
               updatedStates[i] = false;
@@ -231,7 +230,7 @@ const MultiStepForm = () => {
     }
   }, [step]);
 
-  const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
   const handlePreprocessImage = async () => {
     try {
@@ -427,8 +426,7 @@ const MultiStepForm = () => {
                             fileType: (value) =>
                               value?.[0]?.type === "image/jpeg" || value?.[0]?.type === "image/png" || "Only JPEG/PNG files are allowed",
                             fileSize: (value) =>
-                              value?.[0]?.size < 5 * 1024 * 1024 || "File size must be less than 5MB",
-                          },
+                              value?.[0]?.size && value[0].size < 5 * 1024 * 1024 || "File size must be less than 5MB"},
                         }}
                         render={({ field: { onChange } }) => (
                           <>
